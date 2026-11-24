@@ -102,7 +102,15 @@ ls
 echo "附件包就绪: $ATTACH_DIR"
 
 echo "== 3/6 准备 rootfs（下载约 100MB，自动校验 SHA256）=="
-python3 prepare.py --data "$DATA_DIR"
+if ! python3 prepare.py --data "$DATA_DIR" 2>/tmp/tcpquality-prepare.err; then
+  if grep -q "refusing overwrite" /tmp/tcpquality-prepare.err && [ -f "$DATA_DIR/rootfs-prepared.json" ]; then
+    echo "rootfs 已存在（之前那次已备好并验过），跳过准备"
+  else
+    cat /tmp/tcpquality-prepare.err >&2
+    exit 1
+  fi
+fi
+rm -f /tmp/tcpquality-prepare.err
 
 echo "== 4/6 准备 Agent 身份 =="
 if [ -f /etc/komari-agent/config.json ]; then
