@@ -8,7 +8,7 @@
 #   bash install-tcpquality.sh 84c29338-b012-457e-906b-1663711747f6
 #
 # 做的事：下附件包并验 SHA256 -> 解压 -> prepare（下 rootfs，约 100MB）
-#   -> 从 systemd 启动参数取 Agent 身份（写 0600 配置，全程不打印 token）
+#   -> 从 systemd 启动参数（没 systemd 时从正在跑的 Agent 进程）取 Agent 身份（写 0600 配置，全程不打印 token）
 #   -> enroll 登记 -> 跑一次 collector 验收（约 15-25 分钟）
 #   -> 验收通过才开定时。只装附件，不改 Agent 本身、不改代理配置。
 # 建议后台跑（SSH 断了也不怕）：
@@ -111,12 +111,27 @@ if [ -f /etc/komari-agent/config.json ]; then
 else
   AGENT_CONFIG="/etc/komari-agent/agent-config.json"
   python3 - <<'PYEOF'
-import json, re, os
-unit = open("/etc/systemd/system/komari-agent.service").read()
-m = re.search(r"-e\s+(\S+)\s+-t\s+(\S+)", unit)
-if not m:
-    raise SystemExit("在 komari-agent.service 里没找到 -e 和 -t 参数")
-endpoint, token = m.group(1), m.group(2)
+import json, re, os, subprocess
+endpoint = token = None
+unit_path = "/etc/systemd/system/komari-agent.service"
+if os.path.exists(unit_path):
+    m = re.search(r"-e\s+(\S+)\s+-t\s+(\S+)", open(unit_path).read())
+    if m:
+        endpoint, token = m.group(1), m.group(2)
+if not endpoint:
+    # 没 systemd 单元时，从正在跑的 Agent 进程命令行里取（Alpine 等不用 systemd 的系统）
+    try:
+        out = subprocess.check_output(["ps", "aux"], text=True)
+    except Exception:
+        out = ""
+    for line in out.splitlines():
+        # 只认 Agent 本体那行：二进制名以 agent 结尾，后面紧跟 -e 地址 -t token
+        m = re.search(r"(\S*agent)\s+-e\s+(\S+)\s+-t\s+(\S+)", line)
+        if m:
+            endpoint, token = m.group(2), m.group(3).strip("\"'")
+            break
+if not endpoint:
+    raise SystemExit("既没找到 komari-agent.service，也没在运行的进程里找到 Agent 的 -e 和 -t 参数")
 os.makedirs("/etc/komari-agent", mode=0o700, exist_ok=True)
 p = "/etc/komari-agent/agent-config.json"
 fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
