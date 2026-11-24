@@ -1,26 +1,35 @@
 #!/usr/bin/env bash
 # 给一台 Komari 节点装 TcpQuality 三网回程附件（一键安装）
 #
-# 用法（在节点上，root 身份）：
-#   bash install-tcpquality.sh <节点UUID> [附件zip本地路径]
-#   例：bash install-tcpquality.sh 84c29338-b012-457e-906b-1663711747f6
+# 用法（在节点上，root 身份；UUID 不用填，脚本按硬件指纹自动识别）：
+#   bash install-tcpquality.sh [附件zip本地路径]
+#   例：bash install-tcpquality.sh
+# 只有指纹认不出时才需要手动传 UUID（目前 3 台同配置的 E2 会这样）：
+#   bash install-tcpquality.sh 84c29338-b012-457e-906b-1663711747f6
 #
 # 做的事：下附件包并验 SHA256 -> 解压 -> prepare（下 rootfs，约 100MB）
 #   -> 从 systemd 启动参数取 Agent 身份（写 0600 配置，全程不打印 token）
 #   -> enroll 登记 -> 跑一次 collector 验收（约 15-25 分钟）
 #   -> 验收通过才开定时。只装附件，不改 Agent 本身、不改代理配置。
 # 建议后台跑（SSH 断了也不怕）：
-#   nohup bash install-tcpquality.sh <节点UUID> > /tmp/tcpquality-install.log 2>&1 &
+#   nohup bash install-tcpquality.sh > /tmp/tcpquality-install.log 2>&1 &
 #   tail -f /tmp/tcpquality-install.log
 #
 # 注意：附件包从本仓库下载（永久链接）。如果节点下不到 GitHub，把附件 zip
-# 传到节点上，用第二个参数传路径，例如：
-#   bash install-tcpquality.sh <节点UUID> /tmp/atlas-komari-tcpquality-0.4.0.zip
+# 传到节点上，用参数传路径，例如：
+#   bash install-tcpquality.sh /tmp/atlas-komari-tcpquality-0.4.0.zip
 
 set -euo pipefail
 
-UUID="${1:-}"
-ZIP_ARG="${2:-}"
+UUID=""
+ZIP_ARG=""
+UUID_RE='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+if [ -n "${1:-}" ]; then
+  if [[ "$1" =~ $UUID_RE ]]; then UUID="$1"; shift
+  elif [ -f "$1" ]; then ZIP_ARG="$1"; shift
+  else echo "第一个参数既不是 UUID 也不是附件 zip 路径：$1"; echo "用法：bash $0 [节点UUID] [附件zip本地路径]（UUID 不填会自动识别）"; exit 2; fi
+fi
+if [ -n "${1:-}" ]; then ZIP_ARG="$1"; fi
 ATTACH_VERSION="0.4.0"
 AGENT_DIR="/opt/komari"
 ATTACH_DIR="$AGENT_DIR/attachments/tcpquality/$ATTACH_VERSION"
@@ -30,10 +39,39 @@ ZIP_URL="https://raw.githubusercontent.com/4258806/komari-tcpquality/main/atlas-
 ZIP_SHA256="d8dc2957d8239dbd9774de2ce4a846cbf6874fed62310f02e0fcd680a797ede2"
 ZIP_PATH="/tmp/atlas-komari-tcpquality-0.4.0.zip"
 
-if [ -z "$UUID" ]; then
-  echo "用法: bash $0 <节点UUID> [附件zip本地路径]"
-  exit 2
-fi
+# 用本机硬件指纹在探针上认出自己（UUID 参数没给时用）。
+# 指纹：内核版本 + CPU 核数 + 内存 + 根盘大小，对照 {endpoint}/api/nodes；
+# 恰好一台匹配才认。成功只打印 UUID，失败只把原因打印到 stderr。
+detect_uuid() {
+  local endpoint="$1"
+  local kernel cores mem disk nodes_json
+  kernel="$(uname -r)"
+  cores="$(nproc)"
+  mem="$(awk '/^MemTotal:/ {print $2 * 1024}' /proc/meminfo)"
+  disk="$(df --output=size -B1 / | tail -1 | tr -d ' ')"
+  nodes_json="$(curl -fsSL -m 20 "$endpoint/api/nodes")" || { echo "连不上 $endpoint/api/nodes，自动识别不了" >&2; return 1; }
+  printf '%s' "$nodes_json" | python3 -c '
+import json, sys
+kernel, cores, mem, disk = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+nodes = json.load(sys.stdin)["data"]
+hits = []
+for n in nodes:
+    if n.get("kernel_version") != kernel: continue
+    if n.get("cpu_cores") != cores: continue
+    if abs(n.get("mem_total", 0) - mem) > mem * 0.01: continue
+    if abs(n.get("disk_total", 0) - disk) > disk * 0.01: continue
+    hits.append(n)
+if len(hits) == 1:
+    print(hits[0]["uuid"])
+    sys.exit(0)
+if not hits:
+    print("指纹没对上任何节点（内核/CPU/内存/磁盘都不匹配）", file=sys.stderr)
+    sys.exit(2)
+print("指纹对上了 %d 台节点：%s" % (len(hits), "、".join(h["name"] for h in hits)), file=sys.stderr)
+sys.exit(3)
+' "$kernel" "$cores" "$mem" "$disk"
+}
+
 if [ "$(id -u)" -ne 0 ]; then
   echo "请用 root 运行"
   exit 2
@@ -86,6 +124,20 @@ with os.fdopen(fd, "w") as f:
     json.dump({"endpoint": endpoint, "token": token}, f)
 print("agent-config written; endpoint:", endpoint)
 PYEOF
+fi
+
+ENDPOINT="$(python3 -c "import json; print(json.load(open('$AGENT_CONFIG'))['endpoint'])")"
+if [ -z "$UUID" ]; then
+  echo "没给 UUID，用硬件指纹在探针上识别本节点..."
+  DETECT_ERR="/tmp/tcpquality-detect.err"
+  if ! UUID="$(detect_uuid "$ENDPOINT" 2>"$DETECT_ERR")"; then
+    cat "$DETECT_ERR" >&2
+    echo "自动识别失败，请手动传 UUID，例如：bash $0 84c29338-b012-457e-906b-1663711747f6" >&2
+    rm -f "$DETECT_ERR"
+    exit 2
+  fi
+  rm -f "$DETECT_ERR"
+  echo "识别出本节点 UUID: $UUID"
 fi
 
 echo "== 5/6 登记（enroll）=="
