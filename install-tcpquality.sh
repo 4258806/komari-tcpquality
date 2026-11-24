@@ -46,9 +46,9 @@ detect_uuid() {
   local endpoint="$1"
   local kernel cores mem disk nodes_json
   kernel="$(uname -r)"
-  cores="$(nproc)"
+  cores="$(nproc 2>/dev/null || grep -c '^processor' /proc/cpuinfo)"
   mem="$(awk '/^MemTotal:/ {print $2 * 1024}' /proc/meminfo)"
-  disk="$(df --output=size -B1 / | tail -1 | tr -d ' ')"
+  disk="$(df -P -k / | awk 'NR==2 {print $2 * 1024}')"
   nodes_json="$(curl -fsSL -m 20 "$endpoint/api/nodes")" || { echo "连不上 $endpoint/api/nodes，自动识别不了" >&2; return 1; }
   printf '%s' "$nodes_json" | python3 -c '
 import json, sys
@@ -79,10 +79,10 @@ fi
 
 echo "== 1/6 检查环境 =="
 python3 -c "import sys; assert sys.version_info >= (3, 12), 'Python 需要 3.12 以上'; print('Python', sys.version.split()[0], 'OK')"
-for cmd in unshare chroot mount ip curl sha256sum; do
+for cmd in unshare chroot mount ip curl sha256sum timeout; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "缺命令: $cmd"; exit 1; }
 done
-FREE_KB=$(df --output=avail -k / | tail -1)
+FREE_KB=$(df -P -k / | awk 'NR==2 {print $4}')
 [ "$FREE_KB" -ge 614400 ] || { echo "磁盘剩余不足 600MB"; exit 1; }
 echo "环境 OK，磁盘剩余 $((FREE_KB / 1024)) MB"
 
