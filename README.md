@@ -4,20 +4,26 @@
 
 ## 一键安装
 
-在节点上用 root 跑这一条（把 `<节点UUID>` 换成该节点在 Komari 里的 UUID）：
+在节点上用 root 跑这一条，UUID 不用填，脚本按本机硬件指纹（内核版本、CPU 核数、内存、磁盘）自动识别：
 
 ```bash
-curl -fsSL -o /tmp/install-tcpquality.sh "https://raw.githubusercontent.com/4258806/komari-tcpquality/main/install-tcpquality.sh" && nohup bash /tmp/install-tcpquality.sh <节点UUID> > /tmp/tcpquality-install.log 2>&1 & tail -F /tmp/tcpquality-install.log
+curl -fsSL -o /tmp/install-tcpquality.sh "https://raw.githubusercontent.com/4258806/komari-tcpquality/main/install-tcpquality.sh" && nohup bash /tmp/install-tcpquality.sh > /tmp/tcpquality-install.log 2>&1 & tail -F /tmp/tcpquality-install.log
 ```
 
 看到 `全部完成` 就按 Ctrl+C 退出。
+
+只有指纹认不出时才需要手动传 UUID：目前 3 台同配置的 E2（圣何塞 amd01、东京 amd01、东京 amd02）硬件完全一样，脚本会停下来明说，这时把 UUID 加在命令后面。上面那条换成下面这样（以圣何塞 amd01 为例，东京 amd01 是 `9b3b5968-b4e9-4108-b201-3c5301e4b64e`，东京 amd02 是 `881f2c9e-f0ed-413d-8854-fbdc3b66d3e0`）：
+
+```bash
+curl -fsSL -o /tmp/install-tcpquality.sh "https://raw.githubusercontent.com/4258806/komari-tcpquality/main/install-tcpquality.sh" && nohup bash /tmp/install-tcpquality.sh 7208eb37-0b37-4787-b022-092d6b6aeeff > /tmp/tcpquality-install.log 2>&1 & tail -F /tmp/tcpquality-install.log
+```
 
 ## 脚本做的事
 
 1. 检查环境：Python ≥ 3.12、`unshare`/`chroot`/`mount`/`ip`、`curl`、磁盘 ≥ 600MB
 2. 下载附件包并验 SHA256，解压到 `/opt/komari/attachments/tcpquality/0.4.0`
 3. `prepare.py` 准备 rootfs（下载约 100MB，自动校验）
-4. 从 systemd 启动参数取 Agent 身份，写 0600 配置（全程不打印 token）；已有标准 Agent 配置文件时直接用它
+4. 从 systemd 启动参数取 Agent 身份，写 0600 配置（全程不打印 token）；已有标准 Agent 配置文件时直接用它；没给 UUID 时按硬件指纹自动识别本节点
 5. `enroll.py` 登记
 6. 跑一次 `collector.py run` 验收（约 15–25 分钟），通过了才开定时
 
@@ -25,7 +31,7 @@ curl -fsSL -o /tmp/install-tcpquality.sh "https://raw.githubusercontent.com/4258
 
 ## 装完还差一步（网页上，1 分钟）
 
-后台 → 插件 → Atlas Return Route Probe → 配置，把新节点并进 `nodes` 的同一个大括号里（已有节点保留，节点之间用英文逗号隔开；不要把新节点连同大括号粘到原来后面——两个大括号并排是错的，插件会读不懂配置）：
+后台 → 插件 → Atlas Return Route Probe → 配置，把新节点并进 `nodes` 的同一个大括号里（已有节点保留，节点之间用英文逗号隔开；不要把新节点连同大括号粘到原来后面——两个大括号并排是错的，插件会读不懂配置）。直接抄脚本最后印的那段（UUID 已经填好了），格式是这样的：
 
 ```json
 "<节点UUID>": {"enabled": true, "city": "beijing", "periodMinutes": 720, "collector": "tcpquality"}
