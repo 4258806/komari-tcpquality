@@ -26,7 +26,7 @@ AGENT_DIR="/opt/komari"
 ATTACH_DIR="$AGENT_DIR/attachments/tcpquality/$ATTACH_VERSION"
 DATA_DIR="/var/lib/komari-agent/attachments/tcpquality"
 CONFIG_FILE="/etc/komari-agent/attachments/tcpquality/config.json"
-ZIP_URL="https://muse.ai/files/1396807250183492/1867439151047364/67wtoyigx6yfw4qtzelqp5r7/atlas-komari-tcpquality-0.4.0.zip"
+ZIP_URL="https://raw.githubusercontent.com/4258806/komari-tcpquality/main/atlas-komari-tcpquality-0.4.0.zip"
 ZIP_SHA256="d8dc2957d8239dbd9774de2ce4a846cbf6874fed62310f02e0fcd680a797ede2"
 ZIP_PATH="/tmp/atlas-komari-tcpquality-0.4.0.zip"
 
