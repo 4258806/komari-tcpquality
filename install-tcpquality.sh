@@ -9,7 +9,7 @@
 #
 # 做的事：下附件包并验 SHA256 -> 解压 -> prepare（下 rootfs，约 100MB）
 #   -> 从 systemd 启动参数（没 systemd 时从正在跑的 Agent 进程）取 Agent 身份（写 0600 配置，全程不打印 token）
-#   -> enroll 登记 -> 跑一次 collector 验收（约 15-25 分钟）
+#   -> enroll 登记 -> 跑一次 collector 验收（约 15-70 分钟，1 核小机可达约 60 分钟）
 #   -> 验收通过才开定时。只装附件，不改 Agent 本身、不改代理配置。
 # 建议后台跑（SSH 断了也不怕）：
 #   nohup bash install-tcpquality.sh > /tmp/tcpquality-install.log 2>&1 &
@@ -17,7 +17,7 @@
 #
 # 注意：附件包从本仓库下载（永久链接）。如果节点下不到 GitHub，把附件 zip
 # 传到节点上，用参数传路径，例如：
-#   bash install-tcpquality.sh /tmp/atlas-komari-tcpquality-0.4.0.zip
+#   bash install-tcpquality.sh /tmp/atlas-komari-tcpquality-0.4.1.zip
 
 set -euo pipefail
 
@@ -30,14 +30,14 @@ if [ -n "${1:-}" ]; then
   else echo "第一个参数既不是 UUID 也不是附件 zip 路径：$1"; echo "用法：bash $0 [节点UUID] [附件zip本地路径]（UUID 不填会自动识别）"; exit 2; fi
 fi
 if [ -n "${1:-}" ]; then ZIP_ARG="$1"; fi
-ATTACH_VERSION="0.4.0"
+ATTACH_VERSION="0.4.1"
 AGENT_DIR="/opt/komari"
 ATTACH_DIR="$AGENT_DIR/attachments/tcpquality/$ATTACH_VERSION"
 DATA_DIR="/var/lib/komari-agent/attachments/tcpquality"
 CONFIG_FILE="/etc/komari-agent/attachments/tcpquality/config.json"
-ZIP_URL="https://raw.githubusercontent.com/4258806/komari-tcpquality/main/atlas-komari-tcpquality-0.4.0.zip"
-ZIP_SHA256="d8dc2957d8239dbd9774de2ce4a846cbf6874fed62310f02e0fcd680a797ede2"
-ZIP_PATH="/tmp/atlas-komari-tcpquality-0.4.0.zip"
+ZIP_URL="https://raw.githubusercontent.com/4258806/komari-tcpquality/main/atlas-komari-tcpquality-0.4.1.zip"
+ZIP_SHA256="42129a03c75de57660bab0173e948d0d5a56804d7974ae2b2063c6f12df004bd"
+ZIP_PATH="/tmp/atlas-komari-tcpquality-0.4.1.zip"
 
 # 用本机硬件指纹在探针上认出自己（UUID 参数没给时用）。
 # 指纹：内核版本 + CPU 核数 + 内存 + 根盘大小，对照 {endpoint}/api/nodes；
@@ -170,8 +170,8 @@ python3 enroll.py \
   --data "$DATA_DIR" \
   --config "$CONFIG_FILE"
 
-echo "== 6/6 验收采集（约 15-25 分钟）=="
-timeout 2400 python3 collector.py run --config "$CONFIG_FILE"
+echo "== 6/6 验收采集（约 15-70 分钟，1 核小机可达约 60 分钟）=="
+timeout 4800 python3 collector.py run --config "$CONFIG_FILE"
 echo "验收通过，开定时..."
 python3 enroll.py \
   --agent-config "$AGENT_CONFIG" \
@@ -183,6 +183,6 @@ python3 enroll.py \
 echo "全部完成。"
 echo "最后一步（网页上，1 分钟）：后台 -> 插件 -> Atlas Return Route Probe -> 配置，"
 echo "在 nodes 原有大括号里面、已有节点后面加一个英文逗号，再粘下面这段："
-echo "\"$UUID\": {\"enabled\": true, \"city\": \"beijing\", \"periodMinutes\": 720, \"collector\": \"tcpquality\"}"
+echo "\"$UUID\": {\"enabled\": true, \"city\": \"beijing\", \"periodMinutes\": 720, \"times\": [\"00:01\", \"19:30\"], \"collector\": \"tcpquality\"}"
 echo "注意：不要把新节点连同大括号一起粘到原来后面——两个大括号并排是错的，插件会读不懂配置。"
-echo "（插件固定时刻改造完成后再把 periodMinutes 换成 times）"
+echo "times 是每天固定采集时刻（北京时间 00:01 和 19:30），有 times 时 periodMinutes 只作兼容保留。"
