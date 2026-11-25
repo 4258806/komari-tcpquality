@@ -21,11 +21,11 @@ curl -fsSL -o /tmp/install-tcpquality.sh "https://raw.githubusercontent.com/4258
 ## 脚本做的事
 
 1. 检查环境：Python ≥ 3.12、`unshare`/`chroot`/`mount`/`ip`、`curl`、磁盘 ≥ 600MB
-2. 下载附件包并验 SHA256，解压到 `/opt/komari/attachments/tcpquality/0.4.0`
+2. 下载附件包并验 SHA256，解压到 `/opt/komari/attachments/tcpquality/0.4.1`
 3. `prepare.py` 准备 rootfs（下载约 100MB，自动校验）
 4. 从 systemd 启动参数取 Agent 身份，写 0600 配置（全程不打印 token）；已有标准 Agent 配置文件时直接用它；没给 UUID 时按硬件指纹自动识别本节点
 5. `enroll.py` 登记
-6. 跑一次 `collector.py run` 验收（约 15–25 分钟），通过了才开定时
+6. 跑一次 `collector.py run` 验收（约 15–70 分钟，1 核小机约 50–60 分钟），通过了才开定时
 
 只装附件，不改 Agent 本身，不改代理配置。
 
@@ -34,7 +34,7 @@ curl -fsSL -o /tmp/install-tcpquality.sh "https://raw.githubusercontent.com/4258
 后台 → 插件 → Atlas Return Route Probe → 配置，把新节点并进 `nodes` 的同一个大括号里（已有节点保留，节点之间用英文逗号隔开；不要把新节点连同大括号粘到原来后面——两个大括号并排是错的，插件会读不懂配置）。直接抄脚本最后印的那段（UUID 已经填好了），格式是这样的：
 
 ```json
-"<节点UUID>": {"enabled": true, "city": "beijing", "periodMinutes": 720, "collector": "tcpquality"}
+"<节点UUID>": {"enabled": true, "city": "beijing", "periodMinutes": 720, "times": ["00:01", "19:30"], "collector": "tcpquality"}
 ```
 
 ## 要求
@@ -45,7 +45,7 @@ curl -fsSL -o /tmp/install-tcpquality.sh "https://raw.githubusercontent.com/4258
 ## 文件
 
 - `install-tcpquality.sh`：一键安装脚本
-- `atlas-komari-tcpquality-0.4.0.zip`：附件包，SHA-256 为 `d8dc2957d8239dbd9774de2ce4a846cbf6874fed62310f02e0fcd680a797ede2`（跑脚本时自动校验）
+- `atlas-komari-tcpquality-0.4.1.zip`：附件包，SHA-256 为 `42129a03c75de57660bab0173e948d0d5a56804d7974ae2b2063c6f12df004bd`（跑脚本时自动校验）。每天固定时刻（北京时间 00:01 和 19:30）采集两次，1 核小机完整采集约 50–60 分钟。
 
 ## 来源
 
